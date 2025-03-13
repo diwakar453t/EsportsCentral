@@ -12,8 +12,10 @@ import { AlertCircle } from "lucide-react";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
 const TournamentsPage = () => {
-  const [, params] = useLocation();
-  const queryParams = new URLSearchParams(params.split('?')[1] || "");
+  // Get the current location to access query parameters
+  const [pathname] = useLocation();
+  // Parse query parameters from the URL
+  const queryParams = new URLSearchParams(window.location.search);
   const initialGameId = queryParams.get("gameId") ? parseInt(queryParams.get("gameId") as string) : undefined;
   
   const [selectedGameId, setSelectedGameId] = useState<number | undefined>(initialGameId);
