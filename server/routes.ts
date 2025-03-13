@@ -44,6 +44,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch game" });
     }
   });
+  
+  // Create a new game
+  app.post("/api/games", async (req, res) => {
+    try {
+      // Validate with Zod
+      const gameData = insertGameSchema.parse(req.body);
+      const newGame = await storage.createGame(gameData);
+      res.status(201).json(newGame);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid game data", errors: error.errors });
+      }
+      console.error("Game creation error:", error);
+      res.status(500).json({ message: "Failed to create game" });
+    }
+  });
 
   // Get all tournaments
   app.get("/api/tournaments", async (req, res) => {
@@ -59,7 +75,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       res.json(tournaments);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch tournaments" });
+      console.error("Tournament fetch error:", error);
+      res.status(500).json({ message: "Failed to fetch tournaments", error: error instanceof Error ? error.message : String(error) });
     }
   });
 
