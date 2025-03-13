@@ -5,6 +5,16 @@ import { setupAuth } from "./auth";
 import { z } from "zod";
 import { insertTournamentParticipantSchema } from "@shared/schema";
 
+import Stripe from 'stripe';
+
+if (!process.env.STRIPE_SECRET_KEY) {
+  throw new Error('Missing required Stripe secret: STRIPE_SECRET_KEY');
+}
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: "2023-10-16",
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup authentication routes
   setupAuth(app);
@@ -79,7 +89,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Register for a tournament
+  // Create payment intent for tournament registration
+  app.post("/api/tournaments/:id/payment-intent", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "You must be logged in to register for tournaments" });
+    }
+
+    try {
+      const tournamentId = parseInt(req.params.id);
+      const userId = req.user!.id;
+
+      // Check if tournament exists
+      const tournament = await storage.getTournament(tournamentId);
+      if (!tournament) {
+        return res.status(404).json({ message: "Tournament not found" });
+      }
+
+      // Check if user is already registered
+      const isRegistered = await storage.isUserRegisteredForTournament(userId, tournamentId);
+      if (isRegistered) {
+        return res.status(400).json({ message: "You are already registered for this tournament" });
+      }
+
+      // Check if tournament is full
+      const participants = await storage.getParticipantsForTournament(tournamentId);
+      if (tournament.playerLimit && participants.length >= tournament.playerLimit) {
+        return res.status(400).json({ message: "Tournament is full" });
+      }
+
+      // Create a payment intent with Stripe
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: tournament.entryFee ? Math.round(tournament.entryFee * 100) : 1000, // Convert to cents, default to $10 if not set
+        currency: 'usd',
+        metadata: {
+          tournamentId: tournament.id.toString(),
+          userId: userId.toString()
+        }
+      });
+
+      res.json({
+        clientSecret: paymentIntent.client_secret,
+        tournament
+      });
+    } catch (error) {
+      console.error('Payment intent creation error:', error);
+      res.status(500).json({ message: "Failed to create payment intent" });
+    }
+  });
+
+  // Register for a tournament (after successful payment)
   app.post("/api/tournaments/:id/register", async (req, res) => {
     if (!req.isAuthenticated()) {
       return res.status(401).json({ message: "You must be logged in to register for tournaments" });
@@ -105,6 +163,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const participants = await storage.getParticipantsForTournament(tournamentId);
       if (tournament.playerLimit && participants.length >= tournament.playerLimit) {
         return res.status(400).json({ message: "Tournament is full" });
+      }
+
+      // Verify payment intent if payment is required
+      if (tournament.entryFee) {
+        const { paymentIntentId } = req.body;
+        if (!paymentIntentId) {
+          return res.status(400).json({ message: "Payment is required for this tournament" });
+        }
+
+        // Retrieve payment intent to verify payment
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        if (
+          paymentIntent.status !== 'succeeded' ||
+          paymentIntent.metadata.tournamentId !== tournamentId.toString() ||
+          paymentIntent.metadata.userId !== userId.toString()
+        ) {
+          return res.status(400).json({ message: "Invalid or incomplete payment" });
+        }
       }
       
       // Register the user
