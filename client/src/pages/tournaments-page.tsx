@@ -1,145 +1,143 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Tournament } from "@shared/schema";
+import TournamentCard from "@/components/home/tournament-card";
+import TournamentFilter from "@/components/tournaments/tournament-filter";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useState, useEffect } from "react";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 import { useLocation } from "wouter";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { TournamentCard, TournamentCardProps } from "@/components/ui/tournament-card";
-import { 
-  Search, 
-  Trophy, 
-  Filter,
-  Flame,
-  Clock,
-  CheckCircle,
-  ArrowDown
-} from "lucide-react";
+import { AlertCircle } from "lucide-react";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 
-export default function TournamentsPage() {
-  const [location, setLocation] = useLocation();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("all");
+const TournamentsPage = () => {
+  const [, params] = useLocation();
+  const queryParams = new URLSearchParams(params.split('?')[1] || "");
+  const initialGameId = queryParams.get("gameId") ? parseInt(queryParams.get("gameId") as string) : undefined;
   
-  // Fetch all tournaments
-  const { data: allTournaments = [], isLoading } = useQuery<TournamentCardProps[]>({
-    queryKey: ["/api/tournaments"],
+  const [selectedGameId, setSelectedGameId] = useState<number | undefined>(initialGameId);
+  const { toast } = useToast();
+  const { user } = useAuth();
+
+  // Scroll to top when the component mounts
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  const { data: tournaments, isLoading, error } = useQuery<Tournament[]>({
+    queryKey: ["/api/tournaments", selectedGameId],
+    queryFn: async ({ queryKey }) => {
+      const [_, gameId] = queryKey;
+      const url = gameId 
+        ? `/api/tournaments?gameId=${gameId}` 
+        : "/api/tournaments";
+      
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch tournaments");
+      return res.json();
+    },
   });
-  
-  // Filter tournaments based on search query and active tab
-  const filteredTournaments = allTournaments.filter(tournament => {
-    const matchesSearch = tournament.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          tournament.game.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    if (activeTab === "all") return matchesSearch;
-    if (activeTab === "live") return matchesSearch && tournament.isLive;
-    if (activeTab === "upcoming") return matchesSearch && !tournament.isLive;
-    
-    return matchesSearch;
-  });
-  
-  // Handler for watching a tournament
-  const handleWatchTournament = (id: number) => {
-    setLocation(`/tournaments/${id}/watch`);
+
+  const handleFilterChange = (gameId?: number) => {
+    setSelectedGameId(gameId);
   };
-  
-  // Handler for viewing tournament brackets
-  const handleViewBrackets = (id: number) => {
-    setLocation(`/tournaments/${id}/brackets`);
+
+  const handleRegister = async (tournamentId: number) => {
+    if (!user) {
+      toast({
+        title: "Authentication Required",
+        description: "Please login or register to join tournaments",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await apiRequest("POST", `/api/tournaments/${tournamentId}/register`);
+      toast({
+        title: "Registration Successful",
+        description: "You've successfully registered for the tournament",
+      });
+    } catch (error) {
+      toast({
+        title: "Registration Failed",
+        description: error instanceof Error ? error.message : "Failed to register for tournament",
+        variant: "destructive",
+      });
+    }
   };
-  
+
   return (
-    <div className="container mx-auto px-4 py-24">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
-        <div>
-          <h1 className="font-rajdhani font-bold text-4xl mb-2">
-            <span className="gradient-text">TOURNAMENTS</span>
+    <div className="min-h-screen pt-24 md:pt-32 pb-16 px-4">
+      <div className="max-w-7xl mx-auto">
+        <div className="text-center mb-12">
+          <h1 className="text-3xl md:text-4xl font-bold font-orbitron">
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">
+              Tournaments
+            </span>
           </h1>
-          <p className="text-gray-400">Find and join competitive gaming tournaments</p>
-        </div>
-        <Button 
-          className="bg-neon-purple hover:bg-opacity-90 text-white font-rajdhani font-bold" 
-          onClick={() => setLocation("/tournaments/create")}
-        >
-          <Trophy className="mr-2 h-4 w-4" /> CREATE TOURNAMENT
-        </Button>
-      </div>
-      
-      <div className="flex flex-col md:flex-row gap-4 mb-8">
-        <div className="w-full md:w-64 relative">
-          <Input
-            type="text"
-            placeholder="Search tournaments..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-dark border-gray-800 pr-10"
-          />
-          <Search className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-        </div>
-        
-        <div className="flex-grow">
-          <Tabs defaultValue="all" value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="bg-dark border border-gray-800 rounded-md w-full grid grid-cols-3 h-auto">
-              <TabsTrigger value="all" className="font-rajdhani font-semibold py-2 data-[state=active]:bg-neon-purple/20 data-[state=active]:text-neon-purple">
-                All Tournaments
-              </TabsTrigger>
-              <TabsTrigger value="live" className="font-rajdhani font-semibold py-2 data-[state=active]:bg-neon-pink/20 data-[state=active]:text-neon-pink">
-                <Flame className="mr-1 h-4 w-4" /> Live
-              </TabsTrigger>
-              <TabsTrigger value="upcoming" className="font-rajdhani font-semibold py-2 data-[state=active]:bg-neon-blue/20 data-[state=active]:text-neon-blue">
-                <Clock className="mr-1 h-4 w-4" /> Upcoming
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
-        </div>
-        
-        <Button variant="outline" className="bg-dark border-gray-800 text-gray-300">
-          <Filter className="mr-2 h-4 w-4" /> Filter
-        </Button>
-      </div>
-      
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div key={i} className="bg-dark rounded-lg overflow-hidden animate-pulse h-96"></div>
-          ))}
-        </div>
-      ) : filteredTournaments.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredTournaments.map((tournament) => (
-            <TournamentCard
-              key={tournament.id}
-              {...tournament}
-              onWatch={handleWatchTournament}
-              onBrackets={handleViewBrackets}
-            />
-          ))}
-        </div>
-      ) : (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <div className="bg-dark rounded-full p-8 mb-4">
-            <Trophy className="h-12 w-12 text-gray-600" />
-          </div>
-          <h3 className="text-2xl font-rajdhani font-bold mb-2">No tournaments found</h3>
-          <p className="text-gray-400 mb-4">
-            {searchQuery ? 
-              `No tournaments match "${searchQuery}"` : 
-              "There are no tournaments available right now."}
+          <p className="mt-4 text-gray-400 max-w-2xl mx-auto">
+            Register for upcoming tournaments across various game titles and compete for glory and prizes.
           </p>
-          {searchQuery && (
-            <Button variant="outline" onClick={() => setSearchQuery("")}>
-              Clear search
-            </Button>
-          )}
         </div>
-      )}
-      
-      {filteredTournaments.length > 0 && (
-        <div className="mt-12 flex justify-center">
-          <Button variant="outline" className="border-neon-purple text-neon-purple hover:bg-neon-purple/10 font-rajdhani">
-            LOAD MORE <ArrowDown className="ml-2 h-4 w-4" />
-          </Button>
-        </div>
-      )}
+        
+        <TournamentFilter onFilterChange={handleFilterChange} activeGameId={selectedGameId} />
+        
+        {error && (
+          <Alert variant="destructive" className="mb-6">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Error</AlertTitle>
+            <AlertDescription>
+              Failed to load tournaments. Please try again later.
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        {isLoading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="rounded-xl overflow-hidden bg-dark">
+                <Skeleton className="h-48 w-full" />
+                <div className="p-6">
+                  <Skeleton className="h-6 w-3/4 mb-4" />
+                  <Skeleton className="h-4 w-full mb-4" />
+                  <div className="flex justify-between items-center">
+                    <Skeleton className="h-4 w-1/3" />
+                    <Skeleton className="h-10 w-24" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {tournaments && tournaments.length > 0 ? (
+              tournaments.map(tournament => (
+                <TournamentCard 
+                  key={tournament.id} 
+                  tournament={tournament} 
+                  onRegister={handleRegister}
+                />
+              ))
+            ) : (
+              <div className="col-span-3 text-center py-16">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto text-gray-600 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h2 className="text-xl font-medium text-gray-400 mb-2">No Tournaments Found</h2>
+                <p className="text-gray-500 max-w-md mx-auto">
+                  {selectedGameId ? 
+                    "There are no tournaments available for this game at the moment. Please check back later or select another game." : 
+                    "There are no tournaments available at the moment. Please check back later."}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
-}
+};
+
+export default TournamentsPage;

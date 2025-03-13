@@ -1,476 +1,367 @@
-import { 
-  InsertUser, 
-  InsertGame, 
-  InsertTournament, 
-  InsertUserProfile,
-  User, 
-  Game, 
-  Tournament, 
-  UserProfile, 
-  TournamentParticipant,
-  Match 
-} from "@shared/schema";
+import { users, games, tournaments, tournamentParticipants, matches, leaderboard, type User, type InsertUser, type Game, type InsertGame, type Tournament, type InsertTournament, type TournamentParticipant, type InsertTournamentParticipant, type Match, type InsertMatch, type Leaderboard, type InsertLeaderboard } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 
 const MemoryStore = createMemoryStore(session);
 
-// Define the storage interface
 export interface IStorage {
-  // User management
+  // User operations
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  updateUserLoginTime(userId: number): Promise<void>;
+  updateUser(id: number, userData: Partial<InsertUser>): Promise<User>;
 
-  // User profiles
-  getUserProfile(userId: number): Promise<UserProfile | undefined>;
-  createUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
-  updateUserProfile(userId: number, profile: Partial<InsertUserProfile>): Promise<UserProfile>;
-
-  // Tournament management
-  getTournaments(): Promise<Tournament[]>;
-  getLiveTournaments(): Promise<Tournament[]>;
-  getTournament(id: number): Promise<Tournament | undefined>;
-  createTournament(tournament: InsertTournament): Promise<Tournament>;
-  getUserTournaments(userId: number): Promise<Tournament[]>;
-  joinTournament(tournamentId: number, userId: number): Promise<TournamentParticipant>;
-
-  // Game management
-  getGames(genre?: string, sort?: string): Promise<Game[]>;
-  getGamesList(): Promise<{ id: string, name: string }[]>;
-  getGameGenres(): Promise<{ id: string, name: string }[]>;
+  // Game operations
+  getGames(): Promise<Game[]>;
   getGame(id: number): Promise<Game | undefined>;
   createGame(game: InsertGame): Promise<Game>;
 
-  // Leaderboard
-  getLeaderboard(game?: string, region?: string): Promise<any[]>;
-  getTopPlayers(): Promise<any[]>;
+  // Tournament operations
+  getTournaments(): Promise<Tournament[]>;
+  getTournament(id: number): Promise<Tournament | undefined>;
+  getTournamentsByGame(gameId: number): Promise<Tournament[]>;
+  createTournament(tournament: InsertTournament): Promise<Tournament>;
 
-  // Session storage
+  // Tournament participant operations
+  registerForTournament(data: InsertTournamentParticipant): Promise<TournamentParticipant>;
+  getParticipantsForTournament(tournamentId: number): Promise<TournamentParticipant[]>;
+  isUserRegisteredForTournament(userId: number, tournamentId: number): Promise<boolean>;
+
+  // Match operations
+  getMatches(): Promise<Match[]>;
+  getMatchesForTournament(tournamentId: number): Promise<Match[]>;
+  getMatchesForUser(userId: number): Promise<Match[]>;
+  createMatch(match: InsertMatch): Promise<Match>;
+  updateMatchResult(matchId: number, winnerId: number, score: string): Promise<Match>;
+
+  // Leaderboard operations
+  getLeaderboard(): Promise<Leaderboard[]>;
+  getUserLeaderboard(userId: number): Promise<Leaderboard | undefined>;
+  updateLeaderboard(userId: number, data: Partial<InsertLeaderboard>): Promise<Leaderboard>;
+
+  // Session store
   sessionStore: session.SessionStore;
 }
 
 export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private userProfiles: Map<number, UserProfile>;
-  private tournaments: Map<number, Tournament>;
-  private tournamentParticipants: Map<number, TournamentParticipant[]>;
-  private games: Map<number, Game>;
-  private matches: Map<number, Match[]>;
+  private usersStore: Map<number, User>;
+  private gamesStore: Map<number, Game>;
+  private tournamentsStore: Map<number, Tournament>;
+  private tournamentParticipantsStore: Map<number, TournamentParticipant>;
+  private matchesStore: Map<number, Match>;
+  private leaderboardStore: Map<number, Leaderboard>;
   
   sessionStore: session.SessionStore;
-  
-  currentUserId: number;
-  currentTournamentId: number;
-  currentGameId: number;
-  currentParticipantId: number;
-  currentMatchId: number;
+  private nextId: { [key: string]: number } = {};
 
   constructor() {
-    this.users = new Map();
-    this.userProfiles = new Map();
-    this.tournaments = new Map();
-    this.tournamentParticipants = new Map();
-    this.games = new Map();
-    this.matches = new Map();
+    this.usersStore = new Map();
+    this.gamesStore = new Map();
+    this.tournamentsStore = new Map();
+    this.tournamentParticipantsStore = new Map();
+    this.matchesStore = new Map();
+    this.leaderboardStore = new Map();
     
-    this.currentUserId = 1;
-    this.currentTournamentId = 1;
-    this.currentGameId = 1;
-    this.currentParticipantId = 1;
-    this.currentMatchId = 1;
+    this.nextId = {
+      users: 1,
+      games: 1,
+      tournaments: 1,
+      tournamentParticipants: 1,
+      matches: 1,
+      leaderboard: 1
+    };
     
     this.sessionStore = new MemoryStore({
-      checkPeriod: 86400000, // 24h
+      checkPeriod: 86400000, // prune expired entries every 24h
     });
     
-    // Initialize with sample data
-    this.initializeSampleData();
+    // Initialize with some sample games
+    this.initializeGames();
+    this.initializeTournaments();
   }
-
-  private initializeSampleData() {
-    // Sample games
-    const sampleGames: InsertGame[] = [
+  
+  private initializeGames() {
+    const sampleGames = [
       {
+        id: this.getNextId('games'),
         name: "Valorant",
-        description: "Tactical 5v5 shooter",
-        image: "https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80",
-        icon: "https://via.placeholder.com/40/FF4655/FFFFFF?text=VAL",
-        genre: "fps",
+        image: "https://images.unsplash.com/photo-1579139273771-e3a458d80f56",
+        activePlayers: 12854,
+        tournamentCount: 24
       },
       {
-        name: "Fortnite",
-        description: "Battle Royale",
-        image: "https://images.unsplash.com/photo-1560253023-3ec5d502959f?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80",
-        icon: "https://via.placeholder.com/40/9D4DFF/FFFFFF?text=FN",
-        genre: "battle-royale",
-      },
-      {
+        id: this.getNextId('games'),
         name: "CS:GO",
-        description: "Tactical team shooter",
-        image: "https://images.unsplash.com/photo-1511882150382-421056c89033?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80",
-        icon: "https://via.placeholder.com/40/F5A623/FFFFFF?text=CS",
-        genre: "fps",
+        image: "https://images.unsplash.com/photo-1542751371-adc38448a05e",
+        activePlayers: 18352,
+        tournamentCount: 32
       },
       {
-        name: "League of Legends",
-        description: "MOBA",
-        image: "https://images.unsplash.com/photo-1550745165-9bc0b252726f?ixlib=rb-1.2.1&auto=format&fit=crop&w=500&q=80",
-        icon: "https://via.placeholder.com/40/0097FF/FFFFFF?text=LOL",
-        genre: "moba",
+        id: this.getNextId('games'),
+        name: "Fortnite",
+        image: "https://images.unsplash.com/photo-1583833008338-31a470dd984d",
+        activePlayers: 15987,
+        tournamentCount: 18
       },
+      {
+        id: this.getNextId('games'),
+        name: "League of Legends",
+        image: "https://images.unsplash.com/photo-1619962305107-96a06628c7e1",
+        activePlayers: 22634,
+        tournamentCount: 28
+      }
     ];
-
-    for (const game of sampleGames) {
-      this.createGame(game);
-    }
+    
+    sampleGames.forEach(game => {
+      this.gamesStore.set(game.id, game);
+    });
+  }
+  
+  private initializeTournaments() {
+    const now = new Date();
+    
+    const tournaments = [
+      {
+        id: this.getNextId('tournaments'),
+        name: "CS:GO Champions League",
+        gameId: 2, // CS:GO
+        image: "https://images.unsplash.com/photo-1542751371-adc38448a05e",
+        description: "The premier CS:GO tournament for elite teams.",
+        prizePool: 25000,
+        teamSize: 5,
+        playerLimit: 128,
+        startDate: new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000), // 2 days from now
+        status: "upcoming"
+      },
+      {
+        id: this.getNextId('tournaments'),
+        name: "Valorant Uprising",
+        gameId: 1, // Valorant
+        image: "https://images.unsplash.com/photo-1579139273771-e3a458d80f56",
+        description: "Battle against the best Valorant teams for glory.",
+        prizePool: 15000,
+        teamSize: 5,
+        playerLimit: 64,
+        startDate: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+        status: "upcoming"
+      },
+      {
+        id: this.getNextId('tournaments'),
+        name: "Fortnite Masters",
+        gameId: 3, // Fortnite
+        image: "https://images.unsplash.com/photo-1614680376573-df3480f0c6ff",
+        description: "The ultimate battle royale competition.",
+        prizePool: 10000,
+        teamSize: 1,
+        playerLimit: 100,
+        startDate: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000), // 14 days from now
+        status: "upcoming"
+      }
+    ];
+    
+    tournaments.forEach(tournament => {
+      this.tournamentsStore.set(tournament.id, tournament);
+    });
   }
 
-  // User methods
+  private getNextId(entity: string): number {
+    const id = this.nextId[entity]++;
+    return id;
+  }
+
+  // User operations
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    return this.usersStore.get(id);
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    for (const user of this.users.values()) {
-      if (user.username === username) {
-        return user;
-      }
-    }
-    return undefined;
+    return Array.from(this.usersStore.values()).find(
+      (user) => user.username.toLowerCase() === username.toLowerCase()
+    );
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return Array.from(this.usersStore.values()).find(
+      (user) => user.email.toLowerCase() === email.toLowerCase()
+    );
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.currentUserId++;
+    const id = this.getNextId('users');
     const now = new Date();
-    const user: User = { 
-      ...insertUser, 
-      id, 
-      joinedAt: now,
-      lastLogin: now,
-      role: "user"
+    const user: User = { ...insertUser, id, createdAt: now };
+    this.usersStore.set(id, user);
+    
+    // Also create a leaderboard entry for this user
+    const leaderboardEntry: Leaderboard = {
+      id: this.getNextId('leaderboard'),
+      userId: id,
+      points: 0,
+      wins: 0,
+      losses: 0,
+      rank: this.leaderboardStore.size + 1
     };
-    this.users.set(id, user);
+    this.leaderboardStore.set(leaderboardEntry.id, leaderboardEntry);
+    
     return user;
   }
 
-  async updateUserLoginTime(userId: number): Promise<void> {
-    const user = await this.getUser(userId);
-    if (user) {
-      user.lastLogin = new Date();
-      this.users.set(userId, user);
-    }
-  }
-
-  // User profile methods
-  async getUserProfile(userId: number): Promise<UserProfile | undefined> {
-    return this.userProfiles.get(userId);
-  }
-
-  async createUserProfile(profile: InsertUserProfile): Promise<UserProfile> {
-    const now = new Date();
-    const userProfile: UserProfile = {
-      ...profile,
-      totalTournaments: 0,
-      totalMatches: 0,
-      wins: 0,
-      points: 0,
-      rank: null,
-      gameStats: [],
-      achievements: [],
-      matchHistory: [],
-      recentActivity: [],
-      updatedAt: now,
-    };
-    this.userProfiles.set(profile.userId, userProfile);
-    return userProfile;
-  }
-
-  async updateUserProfile(userId: number, profile: Partial<InsertUserProfile>): Promise<UserProfile> {
-    const existingProfile = await this.getUserProfile(userId);
-    if (!existingProfile) {
-      throw new Error("User profile not found");
+  async updateUser(id: number, userData: Partial<InsertUser>): Promise<User> {
+    const user = await this.getUser(id);
+    if (!user) {
+      throw new Error(`User with id ${id} not found`);
     }
     
-    const updatedProfile: UserProfile = {
-      ...existingProfile,
-      ...profile,
-      updatedAt: new Date(),
-    };
-    
-    this.userProfiles.set(userId, updatedProfile);
-    return updatedProfile;
+    const updatedUser = { ...user, ...userData };
+    this.usersStore.set(id, updatedUser);
+    return updatedUser;
   }
 
-  // Tournament methods
-  async getTournaments(): Promise<Tournament[]> {
-    return Array.from(this.tournaments.values());
-  }
-
-  async getLiveTournaments(): Promise<Tournament[]> {
-    return Array.from(this.tournaments.values()).filter(tournament => tournament.isLive);
-  }
-
-  async getTournament(id: number): Promise<Tournament | undefined> {
-    return this.tournaments.get(id);
-  }
-
-  async createTournament(tournamentData: InsertTournament): Promise<Tournament> {
-    const id = this.currentTournamentId++;
-    const now = new Date();
-    
-    const tournament: Tournament = {
-      ...tournamentData,
-      id,
-      currentTeams: 0,
-      status: "upcoming",
-      isLive: false,
-      viewers: 0,
-      stage: "Not Started",
-      createdAt: now,
-    };
-    
-    this.tournaments.set(id, tournament);
-    return tournament;
-  }
-
-  async getUserTournaments(userId: number): Promise<Tournament[]> {
-    // Find all tournament participants for this user
-    const userTournaments: Tournament[] = [];
-    
-    for (const [tournamentId, participants] of this.tournamentParticipants.entries()) {
-      if (participants.some(p => p.userId === userId)) {
-        const tournament = await this.getTournament(tournamentId);
-        if (tournament) {
-          userTournaments.push(tournament);
-        }
-      }
-    }
-    
-    return userTournaments;
-  }
-
-  async joinTournament(tournamentId: number, userId: number): Promise<TournamentParticipant> {
-    const tournament = await this.getTournament(tournamentId);
-    if (!tournament) {
-      throw new Error("Tournament not found");
-    }
-    
-    // Check if user is already in the tournament
-    const participants = this.tournamentParticipants.get(tournamentId) || [];
-    if (participants.some(p => p.userId === userId)) {
-      throw new Error("User already joined this tournament");
-    }
-    
-    // Check if tournament is full
-    if (tournament.currentTeams >= tournament.maxTeams) {
-      throw new Error("Tournament is full");
-    }
-    
-    const id = this.currentParticipantId++;
-    const participant: TournamentParticipant = {
-      id,
-      tournamentId,
-      userId,
-      teamId: null,
-      joinedAt: new Date(),
-      status: "active",
-    };
-    
-    participants.push(participant);
-    this.tournamentParticipants.set(tournamentId, participants);
-    
-    // Update tournament current teams count
-    tournament.currentTeams += 1;
-    this.tournaments.set(tournamentId, tournament);
-    
-    // Update user profile
-    const profile = await this.getUserProfile(userId);
-    if (profile) {
-      profile.totalTournaments += 1;
-      const now = new Date();
-      const activity = {
-        description: `Joined tournament: ${tournament.title}`,
-        date: now.toISOString(),
-      };
-      
-      if (!profile.recentActivity) {
-        profile.recentActivity = [];
-      }
-      
-      profile.recentActivity.unshift(activity);
-      this.userProfiles.set(userId, profile);
-    }
-    
-    return participant;
-  }
-
-  // Game methods
-  async getGames(genre?: string, sort?: string): Promise<Game[]> {
-    let games = Array.from(this.games.values());
-    
-    // Filter by genre if provided
-    if (genre && genre !== "all") {
-      games = games.filter(game => game.genre === genre);
-    }
-    
-    // Sort games
-    if (sort) {
-      switch (sort) {
-        case "popular":
-          // Stub: In a real app, would sort by popularity metrics
-          break;
-        case "tournaments":
-          // Stub: In a real app, would sort by tournament count
-          break;
-        case "prizepool":
-          // Stub: In a real app, would sort by prize pool total
-          break;
-        case "newest":
-          games.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-          break;
-        default:
-          break;
-      }
-    }
-    
-    return games;
-  }
-
-  async getGamesList(): Promise<{ id: string, name: string }[]> {
-    return Array.from(this.games.values()).map(game => ({
-      id: game.id.toString(),
-      name: game.name,
-    }));
-  }
-
-  async getGameGenres(): Promise<{ id: string, name: string }[]> {
-    const genreSet = new Set<string>();
-    
-    for (const game of this.games.values()) {
-      genreSet.add(game.genre);
-    }
-    
-    return Array.from(genreSet).map(genre => {
-      let name = genre.charAt(0).toUpperCase() + genre.slice(1);
-      if (genre === "fps") name = "FPS";
-      if (genre === "moba") name = "MOBA";
-      
-      return {
-        id: genre,
-        name,
-      };
-    });
+  // Game operations
+  async getGames(): Promise<Game[]> {
+    return Array.from(this.gamesStore.values());
   }
 
   async getGame(id: number): Promise<Game | undefined> {
-    return this.games.get(id);
+    return this.gamesStore.get(id);
   }
 
-  async createGame(gameData: InsertGame): Promise<Game> {
-    const id = this.currentGameId++;
+  async createGame(game: InsertGame): Promise<Game> {
+    const id = this.getNextId('games');
+    const newGame: Game = { ...game, id };
+    this.gamesStore.set(id, newGame);
+    return newGame;
+  }
+
+  // Tournament operations
+  async getTournaments(): Promise<Tournament[]> {
+    return Array.from(this.tournamentsStore.values());
+  }
+
+  async getTournament(id: number): Promise<Tournament | undefined> {
+    return this.tournamentsStore.get(id);
+  }
+
+  async getTournamentsByGame(gameId: number): Promise<Tournament[]> {
+    return Array.from(this.tournamentsStore.values()).filter(
+      tournament => tournament.gameId === gameId
+    );
+  }
+
+  async createTournament(tournament: InsertTournament): Promise<Tournament> {
+    const id = this.getNextId('tournaments');
+    const newTournament: Tournament = { ...tournament, id };
+    this.tournamentsStore.set(id, newTournament);
+    return newTournament;
+  }
+
+  // Tournament participant operations
+  async registerForTournament(data: InsertTournamentParticipant): Promise<TournamentParticipant> {
+    const id = this.getNextId('tournamentParticipants');
     const now = new Date();
-    
-    const game: Game = {
-      ...gameData,
-      id,
-      createdAt: now,
-      active: true,
-    };
-    
-    this.games.set(id, game);
-    return game;
+    const participant: TournamentParticipant = { ...data, id, registeredAt: now };
+    this.tournamentParticipantsStore.set(id, participant);
+    return participant;
   }
 
-  // Leaderboard methods
-  async getLeaderboard(game?: string, region?: string): Promise<any[]> {
-    // In a real app, this would query the leaderboard table
-    // For this demo, return some sample players
-    const samplePlayers = [
-      {
-        id: 1,
-        rank: 1,
-        username: "NinjaWarrior",
-        avatar: "https://randomuser.me/api/portraits/men/32.jpg",
-        country: "United States",
-        game: "Valorant",
-        gameIcon: "https://via.placeholder.com/20/FF4655/FFFFFF?text=VAL",
-        wins: 214,
-        points: 9458,
-        winRate: 78,
-        isOnline: true,
-      },
-      {
-        id: 2,
-        rank: 2,
-        username: "PixelQueen",
-        avatar: "https://randomuser.me/api/portraits/women/44.jpg",
-        country: "South Korea",
-        game: "Fortnite",
-        gameIcon: "https://via.placeholder.com/20/9D4DFF/FFFFFF?text=FN",
-        wins: 189,
-        points: 8942,
-        winRate: 73,
-        isOnline: true,
-      },
-      {
-        id: 3,
-        rank: 3,
-        username: "HeadShotKing",
-        avatar: "https://randomuser.me/api/portraits/men/67.jpg",
-        country: "Germany",
-        game: "CS:GO",
-        gameIcon: "https://via.placeholder.com/20/F5A623/FFFFFF?text=CS",
-        wins: 176,
-        points: 8105,
-        winRate: 68,
-        isOnline: false,
-      },
-      {
-        id: 4,
-        rank: 4,
-        username: "FragMaster",
-        avatar: "https://randomuser.me/api/portraits/women/28.jpg",
-        country: "Canada",
-        game: "Valorant",
-        gameIcon: "https://via.placeholder.com/20/FF4655/FFFFFF?text=VAL",
-        wins: 162,
-        points: 7890,
-        winRate: 65,
-        isOnline: true,
-      },
-      {
-        id: 5,
-        rank: 5,
-        username: "SniperElite",
-        avatar: "https://randomuser.me/api/portraits/men/52.jpg",
-        country: "Brazil",
-        game: "Fortnite",
-        gameIcon: "https://via.placeholder.com/20/9D4DFF/FFFFFF?text=FN",
-        wins: 159,
-        points: 7456,
-        winRate: 61,
-        isOnline: false,
-      },
-    ];
-    
-    // Filter by game if provided
-    if (game && game !== "all") {
-      return samplePlayers.filter(player => player.game.toLowerCase() === game.toLowerCase());
-    }
-    
-    // Filter by region if provided
-    if (region && region !== "all") {
-      // In a real app, this would filter by player region
-    }
-    
-    return samplePlayers;
+  async getParticipantsForTournament(tournamentId: number): Promise<TournamentParticipant[]> {
+    return Array.from(this.tournamentParticipantsStore.values()).filter(
+      participant => participant.tournamentId === tournamentId
+    );
   }
 
-  async getTopPlayers(): Promise<any[]> {
-    // Return top 5 players
-    return this.getLeaderboard();
+  async isUserRegisteredForTournament(userId: number, tournamentId: number): Promise<boolean> {
+    return Array.from(this.tournamentParticipantsStore.values()).some(
+      participant => participant.userId === userId && participant.tournamentId === tournamentId
+    );
+  }
+
+  // Match operations
+  async getMatches(): Promise<Match[]> {
+    return Array.from(this.matchesStore.values());
+  }
+
+  async getMatchesForTournament(tournamentId: number): Promise<Match[]> {
+    return Array.from(this.matchesStore.values()).filter(
+      match => match.tournamentId === tournamentId
+    );
+  }
+
+  async getMatchesForUser(userId: number): Promise<Match[]> {
+    return Array.from(this.matchesStore.values()).filter(
+      match => match.player1Id === userId || match.player2Id === userId
+    );
+  }
+
+  async createMatch(match: InsertMatch): Promise<Match> {
+    const id = this.getNextId('matches');
+    const newMatch: Match = { ...match, id };
+    this.matchesStore.set(id, newMatch);
+    return newMatch;
+  }
+
+  async updateMatchResult(matchId: number, winnerId: number, score: string): Promise<Match> {
+    const match = this.matchesStore.get(matchId);
+    if (!match) {
+      throw new Error(`Match with id ${matchId} not found`);
+    }
+    
+    const updatedMatch = { ...match, winnerId, score };
+    this.matchesStore.set(matchId, updatedMatch);
+    
+    // Update leaderboard
+    const winner = await this.getUserLeaderboard(winnerId);
+    const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id;
+    const loser = await this.getUserLeaderboard(loserId);
+    
+    if (winner) {
+      await this.updateLeaderboard(winnerId, {
+        points: winner.points + 100,
+        wins: winner.wins + 1
+      });
+    }
+    
+    if (loser) {
+      await this.updateLeaderboard(loserId, {
+        losses: loser.losses + 1
+      });
+    }
+    
+    return updatedMatch;
+  }
+
+  // Leaderboard operations
+  async getLeaderboard(): Promise<Leaderboard[]> {
+    return Array.from(this.leaderboardStore.values())
+      .sort((a, b) => b.points - a.points);
+  }
+
+  async getUserLeaderboard(userId: number): Promise<Leaderboard | undefined> {
+    return Array.from(this.leaderboardStore.values()).find(
+      entry => entry.userId === userId
+    );
+  }
+
+  async updateLeaderboard(userId: number, data: Partial<InsertLeaderboard>): Promise<Leaderboard> {
+    const entry = await this.getUserLeaderboard(userId);
+    if (!entry) {
+      throw new Error(`Leaderboard entry for user ${userId} not found`);
+    }
+    
+    const updatedEntry = { ...entry, ...data };
+    this.leaderboardStore.set(entry.id, updatedEntry);
+    
+    // Re-calculate ranks
+    const sortedEntries = Array.from(this.leaderboardStore.values())
+      .sort((a, b) => b.points - a.points);
+    
+    sortedEntries.forEach((entry, index) => {
+      entry.rank = index + 1;
+      this.leaderboardStore.set(entry.id, entry);
+    });
+    
+    return updatedEntry;
   }
 }
 

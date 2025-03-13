@@ -3,156 +3,28 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
 import { z } from "zod";
-import { 
-  insertGameSchema, 
-  insertTournamentSchema, 
-  insertUserProfileSchema 
-} from "@shared/schema";
+import { insertTournamentParticipantSchema } from "@shared/schema";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Set up authentication routes
+  // Setup authentication routes
   setupAuth(app);
 
-  // Profile routes
-  app.get("/api/profile", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    try {
-      const profile = await storage.getUserProfile(req.user.id);
-      res.json(profile);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch profile" });
-    }
-  });
-
-  app.patch("/api/profile", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    try {
-      const updateSchema = insertUserProfileSchema.partial().omit({ userId: true });
-      const data = updateSchema.parse(req.body);
-      
-      const updatedProfile = await storage.updateUserProfile(req.user.id, data);
-      res.json(updatedProfile);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to update profile" });
-    }
-  });
-
-  // Tournament routes
-  app.get("/api/tournaments", async (req, res) => {
-    try {
-      const tournaments = await storage.getTournaments();
-      res.json(tournaments);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch tournaments" });
-    }
-  });
-
-  app.get("/api/tournaments/live", async (req, res) => {
-    try {
-      const tournaments = await storage.getLiveTournaments();
-      res.json(tournaments);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch live tournaments" });
-    }
-  });
-
-  app.get("/api/tournaments/user", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    try {
-      const tournaments = await storage.getUserTournaments(req.user.id);
-      res.json(tournaments);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch user tournaments" });
-    }
-  });
-
-  app.get("/api/tournaments/:id", async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid tournament ID" });
-      }
-      
-      const tournament = await storage.getTournament(id);
-      if (!tournament) {
-        return res.status(404).json({ message: "Tournament not found" });
-      }
-      
-      res.json(tournament);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch tournament" });
-    }
-  });
-
-  app.post("/api/tournaments", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    try {
-      const tournamentData = insertTournamentSchema.parse({
-        ...req.body,
-        createdBy: req.user.id
-      });
-      
-      const tournament = await storage.createTournament(tournamentData);
-      res.status(201).json(tournament);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to create tournament" });
-    }
-  });
-
-  app.post("/api/tournaments/:id/join", async (req, res) => {
-    if (!req.isAuthenticated()) return res.sendStatus(401);
-    try {
-      const tournamentId = parseInt(req.params.id);
-      if (isNaN(tournamentId)) {
-        return res.status(400).json({ message: "Invalid tournament ID" });
-      }
-      
-      const result = await storage.joinTournament(tournamentId, req.user.id);
-      res.status(201).json(result);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to join tournament" });
-    }
-  });
-
-  // Game routes
+  // Get all games
   app.get("/api/games", async (req, res) => {
     try {
-      const genre = req.query.genre as string;
-      const sort = req.query.sort as string;
-      
-      const games = await storage.getGames(genre, sort);
+      const games = await storage.getGames();
       res.json(games);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch games" });
     }
   });
 
-  app.get("/api/games/list", async (req, res) => {
-    try {
-      const games = await storage.getGamesList();
-      res.json(games);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch games list" });
-    }
-  });
-
-  app.get("/api/games/genres", async (req, res) => {
-    try {
-      const genres = await storage.getGameGenres();
-      res.json(genres);
-    } catch (error) {
-      res.status(500).json({ message: "Failed to fetch game genres" });
-    }
-  });
-
+  // Get a specific game
   app.get("/api/games/:id", async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) {
-        return res.status(400).json({ message: "Invalid game ID" });
-      }
+      const gameId = parseInt(req.params.id);
+      const game = await storage.getGame(gameId);
       
-      const game = await storage.getGame(id);
       if (!game) {
         return res.status(404).json({ message: "Game not found" });
       }
@@ -163,74 +35,167 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/games", async (req, res) => {
-    if (!req.isAuthenticated() || req.user.role !== "admin") {
-      return res.status(403).json({ message: "Unauthorized" });
-    }
-    
+  // Get all tournaments
+  app.get("/api/tournaments", async (req, res) => {
     try {
-      const gameData = insertGameSchema.parse(req.body);
-      const game = await storage.createGame(gameData);
-      res.status(201).json(game);
+      const gameId = req.query.gameId ? parseInt(req.query.gameId as string) : undefined;
+      
+      let tournaments;
+      if (gameId) {
+        tournaments = await storage.getTournamentsByGame(gameId);
+      } else {
+        tournaments = await storage.getTournaments();
+      }
+      
+      res.json(tournaments);
     } catch (error) {
-      res.status(500).json({ message: "Failed to create game" });
+      res.status(500).json({ message: "Failed to fetch tournaments" });
     }
   });
 
-  // Leaderboard routes
+  // Get a specific tournament
+  app.get("/api/tournaments/:id", async (req, res) => {
+    try {
+      const tournamentId = parseInt(req.params.id);
+      const tournament = await storage.getTournament(tournamentId);
+      
+      if (!tournament) {
+        return res.status(404).json({ message: "Tournament not found" });
+      }
+      
+      // Get the game for this tournament
+      const game = await storage.getGame(tournament.gameId);
+      
+      // Get participants count
+      const participants = await storage.getParticipantsForTournament(tournamentId);
+      
+      res.json({
+        ...tournament,
+        game,
+        participantsCount: participants.length,
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch tournament" });
+    }
+  });
+
+  // Register for a tournament
+  app.post("/api/tournaments/:id/register", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "You must be logged in to register for tournaments" });
+    }
+    
+    try {
+      const tournamentId = parseInt(req.params.id);
+      const userId = req.user!.id;
+      
+      // Check if tournament exists
+      const tournament = await storage.getTournament(tournamentId);
+      if (!tournament) {
+        return res.status(404).json({ message: "Tournament not found" });
+      }
+      
+      // Check if user is already registered
+      const isRegistered = await storage.isUserRegisteredForTournament(userId, tournamentId);
+      if (isRegistered) {
+        return res.status(400).json({ message: "You are already registered for this tournament" });
+      }
+      
+      // Check if tournament is full
+      const participants = await storage.getParticipantsForTournament(tournamentId);
+      if (tournament.playerLimit && participants.length >= tournament.playerLimit) {
+        return res.status(400).json({ message: "Tournament is full" });
+      }
+      
+      // Register the user
+      const data = {
+        tournamentId,
+        userId
+      };
+      
+      // Validate with Zod
+      const validatedData = insertTournamentParticipantSchema.parse(data);
+      
+      const registration = await storage.registerForTournament(validatedData);
+      res.status(201).json(registration);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to register for tournament" });
+    }
+  });
+
+  // Get matches for a user
+  app.get("/api/matches", async (req, res) => {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ message: "You must be logged in to view matches" });
+    }
+    
+    try {
+      const userId = req.user!.id;
+      const matches = await storage.getMatchesForUser(userId);
+      
+      // Get tournament details for each match
+      const matchesWithDetails = await Promise.all(matches.map(async (match) => {
+        const tournament = await storage.getTournament(match.tournamentId);
+        return {
+          ...match,
+          tournament
+        };
+      }));
+      
+      res.json(matchesWithDetails);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch matches" });
+    }
+  });
+
+  // Get leaderboard
   app.get("/api/leaderboard", async (req, res) => {
     try {
-      const game = req.query.game as string;
-      const region = req.query.region as string;
+      const leaderboard = await storage.getLeaderboard();
       
-      const leaderboard = await storage.getLeaderboard(game, region);
-      res.json(leaderboard);
+      // Get user details for each leaderboard entry
+      const leaderboardWithUsers = await Promise.all(leaderboard.map(async (entry) => {
+        const user = await storage.getUser(entry.userId);
+        if (!user) return null;
+        
+        // Remove sensitive user data
+        const { password, ...userWithoutPassword } = user;
+        
+        return {
+          ...entry,
+          user: userWithoutPassword
+        };
+      }));
+      
+      // Filter out any null entries (where user wasn't found)
+      const validEntries = leaderboardWithUsers.filter(entry => entry !== null);
+      
+      res.json(validEntries);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch leaderboard" });
     }
   });
 
-  app.get("/api/leaderboard/top", async (req, res) => {
+  // Get user's leaderboard entry
+  app.get("/api/users/:id/leaderboard", async (req, res) => {
     try {
-      const leaderboard = await storage.getTopPlayers();
-      res.json(leaderboard);
+      const userId = parseInt(req.params.id);
+      const leaderboardEntry = await storage.getUserLeaderboard(userId);
+      
+      if (!leaderboardEntry) {
+        return res.status(404).json({ message: "Leaderboard entry not found" });
+      }
+      
+      res.json(leaderboardEntry);
     } catch (error) {
-      res.status(500).json({ message: "Failed to fetch top players" });
+      res.status(500).json({ message: "Failed to fetch leaderboard entry" });
     }
   });
 
-  // Mock countries data for dropdown
-  app.get("/api/countries", (req, res) => {
-    const countries = [
-      { code: "US", name: "United States" },
-      { code: "GB", name: "United Kingdom" },
-      { code: "CA", name: "Canada" },
-      { code: "AU", name: "Australia" },
-      { code: "DE", name: "Germany" },
-      { code: "FR", name: "France" },
-      { code: "JP", name: "Japan" },
-      { code: "BR", name: "Brazil" },
-      { code: "RU", name: "Russia" },
-      { code: "CN", name: "China" },
-      { code: "IN", name: "India" },
-      { code: "KR", name: "South Korea" },
-    ];
-    res.json(countries);
-  });
-
-  // Mock regions data for dropdown
-  app.get("/api/regions", (req, res) => {
-    const regions = [
-      { id: "global", name: "Global" },
-      { id: "na", name: "North America" },
-      { id: "eu", name: "Europe" },
-      { id: "asia", name: "Asia" },
-      { id: "oce", name: "Oceania" },
-      { id: "sa", name: "South America" },
-    ];
-    res.json(regions);
-  });
-
   const httpServer = createServer(app);
+
   return httpServer;
 }

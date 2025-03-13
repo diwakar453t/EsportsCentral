@@ -1,370 +1,102 @@
-import { useState, useEffect } from "react";
-import { useLocation } from "wouter";
-import { z } from "zod";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useForm } from "react-hook-form";
-import { 
-  Card, 
-  CardContent, 
-  CardDescription, 
-  CardFooter, 
-  CardHeader, 
-  CardTitle 
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
-import { 
-  Gamepad, 
-  User, 
-  Lock, 
-  Trophy, 
-  LogIn, 
-  UserPlus,
-  AlertCircle
-} from "lucide-react";
-import { insertUserSchema } from "@shared/schema";
+import LoginForm from "@/components/forms/login-form";
+import RegisterForm from "@/components/forms/register-form";
 import { useAuth } from "@/hooks/use-auth";
-import { FaDiscord, FaGoogle, FaSteam } from "react-icons/fa";
+import { useEffect } from "react";
+import { useLocation } from "wouter";
 
-// Add extra validation rules
-const loginSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-});
+const AuthPage = () => {
+  const { user, isLoading } = useAuth();
+  const [, setLocation] = useLocation();
 
-// Add extra validation for registration
-const registerSchema = insertUserSchema.extend({
-  password: z.string().min(6, "Password must be at least 6 characters"),
-  confirmPassword: z.string(),
-}).refine((data) => data.password === data.confirmPassword, {
-  message: "Passwords do not match",
-  path: ["confirmPassword"],
-});
-
-type LoginInput = z.infer<typeof loginSchema>;
-type RegisterInput = z.infer<typeof registerSchema>;
-
-export default function AuthPage() {
-  const [authTab, setAuthTab] = useState("login");
-  const [location, setLocation] = useLocation();
-  const { user, loginMutation, registerMutation } = useAuth();
-  
-  // Redirect to home if already logged in
+  // Redirect to home if user is already logged in
   useEffect(() => {
-    if (user) {
+    if (user && !isLoading) {
       setLocation("/");
     }
-  }, [user, setLocation]);
-  
-  // Login form
-  const loginForm = useForm<LoginInput>({
-    resolver: zodResolver(loginSchema),
-    defaultValues: {
-      username: "",
-      password: "",
-    },
-  });
-  
-  // Register form
-  const registerForm = useForm<RegisterInput>({
-    resolver: zodResolver(registerSchema),
-    defaultValues: {
-      username: "",
-      password: "",
-      confirmPassword: "",
-    },
-  });
-  
-  // Submit login form
-  const onLoginSubmit = (data: LoginInput) => {
-    loginMutation.mutate(data);
-  };
-  
-  // Submit register form
-  const onRegisterSubmit = (data: RegisterInput) => {
-    // Remove confirmPassword as it's not in the expected server schema
-    const { confirmPassword, ...registerData } = data;
-    registerMutation.mutate(registerData);
-  };
-  
+  }, [user, isLoading, setLocation]);
+
   return (
-    <div className="min-h-screen flex items-center justify-center py-20 px-4">
-      <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Auth Form */}
-        <div className="flex flex-col justify-center">
-          <div className="mb-8 flex items-center gap-3">
-            <Gamepad className="h-8 w-8 text-neon-purple" />
-            <h1 className="font-orbitron font-bold text-3xl">Nexus<span className="text-neon-purple">Arena</span></h1>
-          </div>
-          
-          <Card className="bg-dark border-gray-800">
-            <CardHeader>
-              <Tabs defaultValue="login" value={authTab} onValueChange={setAuthTab}>
-                <TabsList className="grid w-full grid-cols-2 bg-sidebar-background">
-                  <TabsTrigger value="login" className="font-rajdhani font-semibold">
-                    <LogIn className="h-4 w-4 mr-2" /> Login
-                  </TabsTrigger>
-                  <TabsTrigger value="register" className="font-rajdhani font-semibold">
-                    <UserPlus className="h-4 w-4 mr-2" /> Register
-                  </TabsTrigger>
-                </TabsList>
-                <div className="mt-4">
-                  <TabsContent value="login">
-                    <CardTitle className="text-2xl font-rajdhani">Welcome back</CardTitle>
-                    <CardDescription>Enter your credentials to access your account</CardDescription>
-                  </TabsContent>
-                  <TabsContent value="register">
-                    <CardTitle className="text-2xl font-rajdhani">Create an account</CardTitle>
-                    <CardDescription>Join the ultimate esports tournament platform</CardDescription>
-                  </TabsContent>
-                </div>
-              </Tabs>
-            </CardHeader>
-            <CardContent>
-              <TabsContent value="login">
-                <Form {...loginForm}>
-                  <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-4">
-                    <FormField
-                      control={loginForm.control}
-                      name="username"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Username</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Input
-                                placeholder="Enter your username"
-                                className="pl-10"
-                                {...field}
-                              />
-                              <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={loginForm.control}
-                      name="password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Password</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Input
-                                type="password"
-                                placeholder="Enter your password"
-                                className="pl-10"
-                                {...field}
-                              />
-                              <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <Button 
-                      type="submit" 
-                      className="w-full bg-neon-purple hover:bg-opacity-90 font-semibold"
-                      disabled={loginMutation.isPending}
-                    >
-                      {loginMutation.isPending ? "Logging in..." : "Sign In"}
-                    </Button>
-                  </form>
-                </Form>
-              </TabsContent>
-              
-              <TabsContent value="register">
-                <Form {...registerForm}>
-                  <form onSubmit={registerForm.handleSubmit(onRegisterSubmit)} className="space-y-4">
-                    <FormField
-                      control={registerForm.control}
-                      name="username"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Username</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Input
-                                placeholder="Choose a username"
-                                className="pl-10"
-                                {...field}
-                              />
-                              <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={registerForm.control}
-                      name="password"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Password</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Input
-                                type="password"
-                                placeholder="Create a password"
-                                className="pl-10"
-                                {...field}
-                              />
-                              <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={registerForm.control}
-                      name="confirmPassword"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Confirm Password</FormLabel>
-                          <FormControl>
-                            <div className="relative">
-                              <Input
-                                type="password"
-                                placeholder="Confirm your password"
-                                className="pl-10"
-                                {...field}
-                              />
-                              <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                            </div>
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    
-                    <Button 
-                      type="submit" 
-                      className="w-full bg-neon-purple hover:bg-opacity-90 font-semibold"
-                      disabled={registerMutation.isPending}
-                    >
-                      {registerMutation.isPending ? "Creating Account..." : "Create Account"}
-                    </Button>
-                  </form>
-                </Form>
-              </TabsContent>
-              
-              <div className="mt-6 space-y-4">
-                <div className="relative flex items-center">
-                  <Separator className="flex-grow" />
-                  <span className="mx-2 text-xs text-gray-400 bg-dark px-2">OR CONTINUE WITH</span>
-                  <Separator className="flex-grow" />
+    <div className="min-h-screen pt-24 md:pt-32 pb-16 px-4">
+      <div className="max-w-7xl mx-auto">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+          {/* Hero Section */}
+          <div className="order-2 lg:order-1">
+            <div className="max-w-xl">
+              <h1 className="text-3xl md:text-4xl font-bold font-orbitron mb-4">
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">
+                  Join the Ultimate Gaming Community
+                </span>
+              </h1>
+              <p className="text-gray-400 mb-6">
+                Create your account to participate in tournaments, track your progress, and compete with gamers from around the world. Rise through the ranks and become a legend.
+              </p>
+              <div className="space-y-4 neon-border p-6 rounded-xl bg-dark/50 backdrop-blur-sm">
+                <div className="flex items-start">
+                  <div className="flex-shrink-0 h-12 w-12 flex items-center justify-center rounded-lg bg-primary/20 mr-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-medium text-white font-rajdhani">Access Exclusive Tournaments</h3>
+                    <p className="mt-1 text-sm text-gray-400">Compete in tournaments across various games and skill levels.</p>
+                  </div>
                 </div>
                 
-                <div className="grid grid-cols-3 gap-3">
-                  <Button variant="outline" className="border-gray-700 hover:bg-gray-900">
-                    <FaGoogle className="mr-2 h-4 w-4" />
-                    Google
-                  </Button>
-                  <Button variant="outline" className="border-gray-700 hover:bg-gray-900">
-                    <FaDiscord className="mr-2 h-4 w-4" />
-                    Discord
-                  </Button>
-                  <Button variant="outline" className="border-gray-700 hover:bg-gray-900">
-                    <FaSteam className="mr-2 h-4 w-4" />
-                    Steam
-                  </Button>
+                <div className="flex items-start">
+                  <div className="flex-shrink-0 h-12 w-12 flex items-center justify-center rounded-lg bg-primary/20 mr-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-medium text-white font-rajdhani">Create Your Gaming Profile</h3>
+                    <p className="mt-1 text-sm text-gray-400">Build your reputation and track your tournament history.</p>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-        
-        {/* Hero Section */}
-        <div className="hidden lg:flex flex-col justify-center">
-          <div className="bg-dark rounded-xl p-8 border border-neon-blue/30 glow-border">
-            <div className="flex items-center bg-neon-purple/10 p-3 rounded-lg mb-8">
-              <Trophy className="h-10 w-10 text-neon-purple mr-4" />
-              <div>
-                <h3 className="font-rajdhani font-bold text-xl">Compete at the highest level</h3>
-                <p className="text-gray-400 text-sm">Join professional tournaments and win real prizes</p>
-              </div>
-            </div>
-            
-            <h2 className="font-rajdhani font-bold text-3xl md:text-4xl mb-4">
-              Your Journey to <span className="gradient-text">Esports Glory</span> Starts Here
-            </h2>
-            
-            <p className="text-gray-300 mb-6">
-              NexusArena is the ultimate platform for competitive gamers. Create your profile, join tournaments across multiple game titles, and track your performance on global leaderboards.
-            </p>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-              <div className="flex items-start">
-                <div className="bg-neon-blue/10 rounded-lg p-2 mr-3">
-                  <Trophy className="h-5 w-5 text-neon-blue" />
-                </div>
-                <div>
-                  <h4 className="font-medium mb-1">Professional Tournaments</h4>
-                  <p className="text-sm text-gray-400">Compete in events with cash prizes and recognition</p>
-                </div>
-              </div>
-              
-              <div className="flex items-start">
-                <div className="bg-neon-purple/10 rounded-lg p-2 mr-3">
-                  <Gamepad className="h-5 w-5 text-neon-purple" />
-                </div>
-                <div>
-                  <h4 className="font-medium mb-1">Multiple Game Titles</h4>
-                  <p className="text-sm text-gray-400">Valorant, CS:GO, Fortnite, League of Legends & more</p>
-                </div>
-              </div>
-              
-              <div className="flex items-start">
-                <div className="bg-neon-pink/10 rounded-lg p-2 mr-3">
-                  <User className="h-5 w-5 text-neon-pink" />
-                </div>
-                <div>
-                  <h4 className="font-medium mb-1">Player Profiles</h4>
-                  <p className="text-sm text-gray-400">Show off your achievements and stats</p>
-                </div>
-              </div>
-              
-              <div className="flex items-start">
-                <div className="bg-success/10 rounded-lg p-2 mr-3">
-                  <AlertCircle className="h-5 w-5 text-success" />
-                </div>
-                <div>
-                  <h4 className="font-medium mb-1">24/7 Support</h4>
-                  <p className="text-sm text-gray-400">Get help whenever you need it</p>
+                
+                <div className="flex items-start">
+                  <div className="flex-shrink-0 h-12 w-12 flex items-center justify-center rounded-lg bg-primary/20 mr-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-medium text-white font-rajdhani">Connect with Gamers</h3>
+                    <p className="mt-1 text-sm text-gray-400">Join a community of passionate players from around the world.</p>
+                  </div>
                 </div>
               </div>
             </div>
-            
-            <div className="flex items-center bg-darker rounded-lg p-4">
-              <div className="flex -space-x-3 mr-4">
-                <img src="https://randomuser.me/api/portraits/men/32.jpg" alt="User" className="h-8 w-8 rounded-full border-2 border-dark" />
-                <img src="https://randomuser.me/api/portraits/women/44.jpg" alt="User" className="h-8 w-8 rounded-full border-2 border-dark" />
-                <img src="https://randomuser.me/api/portraits/men/67.jpg" alt="User" className="h-8 w-8 rounded-full border-2 border-dark" />
-              </div>
-              <div className="text-sm">
-                <span className="font-medium">50,000+ gamers</span>
-                <span className="text-gray-400"> have already joined our platform</span>
-              </div>
-            </div>
+          </div>
+          
+          {/* Auth Form */}
+          <div className="order-1 lg:order-2">
+            <Card className="neon-border w-full max-w-md mx-auto overflow-hidden">
+              <CardContent className="p-0">
+                <Tabs defaultValue="login" className="w-full">
+                  <TabsList className="grid grid-cols-2 w-full rounded-none">
+                    <TabsTrigger value="login" className="font-rajdhani">LOGIN</TabsTrigger>
+                    <TabsTrigger value="register" className="font-rajdhani">REGISTER</TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="login" className="pt-6 px-6 pb-8">
+                    <LoginForm />
+                  </TabsContent>
+                  
+                  <TabsContent value="register" className="pt-6 px-6 pb-8">
+                    <RegisterForm />
+                  </TabsContent>
+                </Tabs>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>
     </div>
   );
-}
+};
+
+export default AuthPage;

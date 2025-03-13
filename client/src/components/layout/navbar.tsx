@@ -1,160 +1,185 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
-import { 
-  Menu,
-  X,
-  Gamepad,
-  LogIn,
-  UserPlus
-} from "lucide-react";
+import { Menu, X } from "lucide-react";
 
-export default function Navbar() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+const Navbar = () => {
+  const [isNavOpen, setIsNavOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
   const [location] = useLocation();
   const { user, logoutMutation } = useAuth();
-  
-  // Toggle mobile menu
-  const toggleMenu = () => {
-    setIsMenuOpen(!isMenuOpen);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 50);
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  const toggleNav = () => {
+    setIsNavOpen(!isNavOpen);
   };
-  
-  // Navigation items
-  const navItems = [
-    { path: "/", label: "Home" },
-    { path: "/tournaments", label: "Tournaments" },
-    { path: "/leaderboard", label: "Leaderboard" },
-    { path: "/games", label: "Games" }
-  ];
-  
+
+  const closeNav = () => {
+    setIsNavOpen(false);
+  };
+
+  const handleLogout = () => {
+    logoutMutation.mutate();
+  };
+
   return (
-    <header className="fixed top-0 left-0 right-0 bg-darker bg-opacity-80 backdrop-blur-md z-50">
-      <div className="container mx-auto px-4 py-3">
-        <div className="flex justify-between items-center">
+    <nav
+      className={`fixed w-full z-50 transition-all duration-300 ${
+        isScrolled ? "bg-dark/95 shadow-lg" : "bg-dark/80 backdrop-blur-md"
+      }`}
+    >
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between h-16">
           <div className="flex items-center">
-            <Link href="/" className="flex items-center">
-              <div className="mr-2 text-neon-purple text-3xl">
-                <Gamepad />
-              </div>
-              <span className="font-orbitron font-bold text-2xl text-white">Nexus<span className="text-neon-purple">Arena</span></span>
+            <Link href="/" className="flex-shrink-0 flex items-center">
+              <span className="font-orbitron text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">
+                NEXUS<span className="text-white">ARENA</span>
+              </span>
             </Link>
-          </div>
-          
-          <nav className="hidden md:flex space-x-6 ml-10">
-            {navItems.map((item) => (
-              <Link 
-                key={item.path} 
-                href={item.path}
-                className={`font-rajdhani font-semibold ${location === item.path ? 'text-white' : 'text-gray-400'} hover:text-neon-purple transition`}
-              >
-                {item.label}
+            <div className="hidden md:ml-10 md:flex md:space-x-8">
+              <Link href="/">
+                <a className={`text-sm font-rajdhani font-medium px-3 py-2 transition-colors ${location === "/" ? "text-white" : "text-gray-300 hover:text-secondary"}`}>
+                  HOME
+                </a>
               </Link>
-            ))}
-          </nav>
-          
+              <Link href="/about">
+                <a className={`text-sm font-rajdhani font-medium px-3 py-2 transition-colors ${location === "/about" ? "text-white" : "text-gray-300 hover:text-secondary"}`}>
+                  ABOUT
+                </a>
+              </Link>
+              <Link href="/games">
+                <a className={`text-sm font-rajdhani font-medium px-3 py-2 transition-colors ${location === "/games" ? "text-white" : "text-gray-300 hover:text-secondary"}`}>
+                  GAMES
+                </a>
+              </Link>
+              <Link href="/tournaments">
+                <a className={`text-sm font-rajdhani font-medium px-3 py-2 transition-colors ${location === "/tournaments" ? "text-white" : "text-gray-300 hover:text-secondary"}`}>
+                  TOURNAMENTS
+                </a>
+              </Link>
+            </div>
+          </div>
           <div className="flex items-center space-x-4">
             {user ? (
-              <div className="flex items-center space-x-4">
-                <Link href="/profile">
-                  <Button variant="outline" className="border-neon-blue text-neon-blue hover:bg-neon-blue/10">
-                    My Profile
+              <>
+                <Link href="/dashboard">
+                  <Button
+                    variant="outline"
+                    className="hidden md:inline-flex border-primary hover:bg-primary/20"
+                  >
+                    DASHBOARD
                   </Button>
                 </Link>
-                <Button 
-                  variant="ghost" 
-                  className="text-gray-400 hover:text-neon-purple"
-                  onClick={() => logoutMutation.mutate()}
-                  disabled={logoutMutation.isPending}
+                <Button
+                  onClick={handleLogout}
+                  variant="default"
+                  className="hidden md:inline-flex bg-primary hover:bg-primary/80"
                 >
-                  Logout
+                  LOGOUT
                 </Button>
-              </div>
+              </>
             ) : (
               <>
-                <Link href="/auth">
-                  <Button 
-                    variant="outline" 
-                    className="hidden md:flex items-center border-neon-blue text-neon-blue hover:bg-opacity-80"
+                <Link href="/register">
+                  <Button
+                    variant="default"
+                    className="hidden md:inline-flex bg-primary hover:bg-primary/80"
                   >
-                    <LogIn className="h-4 w-4 mr-2" /> Login
+                    REGISTER
                   </Button>
                 </Link>
                 <Link href="/auth">
-                  <Button 
-                    className="hidden md:flex items-center bg-neon-purple hover:bg-opacity-80 text-white"
+                  <Button
+                    variant="outline"
+                    className="hidden md:inline-flex border-primary hover:bg-primary/20"
                   >
-                    <UserPlus className="h-4 w-4 mr-2" /> Register
+                    LOGIN
                   </Button>
                 </Link>
               </>
             )}
-            <button 
-              className="md:hidden text-white text-xl"
-              onClick={toggleMenu}
-              aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
+            <button
+              onClick={toggleNav}
+              className="md:hidden text-gray-200 hover:text-white focus:outline-none"
             >
-              {isMenuOpen ? <X /> : <Menu />}
+              {isNavOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
           </div>
         </div>
       </div>
-      
-      {/* Mobile Menu */}
-      {isMenuOpen && (
-        <div className="md:hidden bg-darker py-4">
-          <div className="container mx-auto px-4">
-            <div className="flex flex-col space-y-3">
-              {navItems.map((item) => (
-                <Link
-                  key={item.path}
-                  href={item.path}
-                  className={`font-rajdhani font-semibold ${location === item.path ? 'text-white' : 'text-gray-400'} hover:text-neon-purple transition py-2`}
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  {item.label}
-                </Link>
-              ))}
-              {!user ? (
-                <div className="flex flex-col space-y-3 pt-3 border-t border-gray-800">
-                  <Link href="/auth" onClick={() => setIsMenuOpen(false)}>
-                    <Button 
-                      variant="outline" 
-                      className="w-full border-neon-blue text-neon-blue"
+
+      {/* Mobile menu */}
+      {isNavOpen && (
+        <div className="md:hidden bg-dark border-t border-gray-800">
+          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+            <Link href="/" onClick={closeNav}>
+              <a className={`block px-3 py-2 rounded-md text-base font-medium ${location === "/" ? "text-white bg-primary/20" : "text-gray-300 hover:text-white hover:bg-primary/20"}`}>
+                Home
+              </a>
+            </Link>
+            <Link href="/about" onClick={closeNav}>
+              <a className={`block px-3 py-2 rounded-md text-base font-medium ${location === "/about" ? "text-white bg-primary/20" : "text-gray-300 hover:text-white hover:bg-primary/20"}`}>
+                About
+              </a>
+            </Link>
+            <Link href="/games" onClick={closeNav}>
+              <a className={`block px-3 py-2 rounded-md text-base font-medium ${location === "/games" ? "text-white bg-primary/20" : "text-gray-300 hover:text-white hover:bg-primary/20"}`}>
+                Games
+              </a>
+            </Link>
+            <Link href="/tournaments" onClick={closeNav}>
+              <a className={`block px-3 py-2 rounded-md text-base font-medium ${location === "/tournaments" ? "text-white bg-primary/20" : "text-gray-300 hover:text-white hover:bg-primary/20"}`}>
+                Tournaments
+              </a>
+            </Link>
+            <div className="pt-4 pb-3 border-t border-gray-800">
+              <div className="flex items-center px-3">
+                {user ? (
+                  <>
+                    <Link href="/dashboard" onClick={closeNav}>
+                      <a className="flex-1 px-4 py-2 border border-transparent text-base font-medium rounded-md text-white bg-primary hover:bg-primary/80 mr-2">
+                        Dashboard
+                      </a>
+                    </Link>
+                    <button
+                      onClick={() => {
+                        handleLogout();
+                        closeNav();
+                      }}
+                      className="flex-1 px-4 py-2 border border-primary text-base font-medium rounded-md text-white hover:bg-primary/20"
                     >
-                      <LogIn className="h-4 w-4 mr-2" /> Login
-                    </Button>
-                  </Link>
-                  <Link href="/auth" onClick={() => setIsMenuOpen(false)}>
-                    <Button className="w-full bg-neon-purple text-white">
-                      <UserPlus className="h-4 w-4 mr-2" /> Register
-                    </Button>
-                  </Link>
-                </div>
-              ) : (
-                <div className="flex flex-col space-y-3 pt-3 border-t border-gray-800">
-                  <Link href="/profile" onClick={() => setIsMenuOpen(false)}>
-                    <Button variant="outline" className="w-full border-neon-blue text-neon-blue">
-                      My Profile
-                    </Button>
-                  </Link>
-                  <Button 
-                    variant="ghost" 
-                    className="text-gray-400 hover:text-neon-purple"
-                    onClick={() => {
-                      logoutMutation.mutate();
-                      setIsMenuOpen(false);
-                    }}
-                    disabled={logoutMutation.isPending}
-                  >
-                    Logout
-                  </Button>
-                </div>
-              )}
+                      Logout
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Link href="/register" onClick={closeNav}>
+                      <a className="flex-1 px-4 py-2 border border-transparent text-base font-medium rounded-md text-white bg-primary hover:bg-primary/80 mr-2">
+                        Register
+                      </a>
+                    </Link>
+                    <Link href="/auth" onClick={closeNav}>
+                      <a className="flex-1 px-4 py-2 border border-primary text-base font-medium rounded-md text-white hover:bg-primary/20">
+                        Login
+                      </a>
+                    </Link>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
-    </header>
+    </nav>
   );
-}
+};
+
+export default Navbar;
