@@ -56,15 +56,15 @@ type RegisterInput = z.infer<typeof registerSchema>;
 
 export default function AuthPage() {
   const [authTab, setAuthTab] = useState("login");
-  const [location, navigate] = useLocation();
+  const [location, setLocation] = useLocation();
   const { user, loginMutation, registerMutation } = useAuth();
   
   // Redirect to home if already logged in
   useEffect(() => {
     if (user) {
-      navigate("/");
+      setLocation("/");
     }
-  }, [user, navigate]);
+  }, [user, setLocation]);
   
   // Login form
   const loginForm = useForm<LoginInput>({
