@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth } from "./auth";
 import { z } from "zod";
-import { insertTournamentParticipantSchema } from "@shared/schema";
+import { insertTournamentParticipantSchema, insertGameSchema } from "@shared/schema";
 
 import Stripe from 'stripe';
 
