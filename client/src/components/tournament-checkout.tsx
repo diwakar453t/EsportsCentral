@@ -11,7 +11,7 @@ const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLIC_KEY);
 
 interface CheckoutFormProps {
   clientSecret: string;
-  onSuccess: () => void;
+  onSuccess: (paymentIntentId: string) => void;
   onCancel: () => void;
 }
 
@@ -31,11 +31,9 @@ const CheckoutForm = ({ clientSecret, onSuccess, onCancel }: CheckoutFormProps) 
     setIsLoading(true);
 
     try {
-      const { error } = await stripe.confirmPayment({
+      const { error, paymentIntent } = await stripe.confirmPayment({
         elements,
-        confirmParams: {
-          return_url: `${window.location.origin}/tournaments`,
-        },
+        redirect: 'if_required',
       });
 
       if (error) {
@@ -44,12 +42,12 @@ const CheckoutForm = ({ clientSecret, onSuccess, onCancel }: CheckoutFormProps) 
           description: error.message,
           variant: "destructive",
         });
-      } else {
+      } else if (paymentIntent && paymentIntent.status === 'succeeded') {
         toast({
           title: "Payment Successful",
           description: "You have successfully registered for the tournament!",
         });
-        onSuccess();
+        onSuccess(paymentIntent.id);
       }
     } catch (error) {
       toast({

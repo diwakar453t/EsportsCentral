@@ -8,7 +8,7 @@ interface TournamentPaymentDialogProps {
   isOpen: boolean;
   onClose: () => void;
   clientSecret: string | null;
-  onSuccess: () => void;
+  onSuccess: (paymentIntentId: string) => void;
 }
 
 export function TournamentPaymentDialog({
@@ -30,7 +30,7 @@ export function TournamentPaymentDialog({
           <div className="mb-6 space-y-2">
             <h3 className="font-semibold">{tournament.name}</h3>
             <p className="text-sm text-muted-foreground">
-              Registration fee: ${tournament.entryFee}
+              Registration fee: ${((tournament.entryFee ?? 0) / 100).toFixed(2)}
             </p>
           </div>
           <Elements stripe={stripePromise} options={{ clientSecret }}>
