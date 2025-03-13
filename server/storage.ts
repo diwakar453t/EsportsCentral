@@ -1,8 +1,13 @@
 import { users, games, tournaments, tournamentParticipants, matches, leaderboard, type User, type InsertUser, type Game, type InsertGame, type Tournament, type InsertTournament, type TournamentParticipant, type InsertTournamentParticipant, type Match, type InsertMatch, type Leaderboard, type InsertLeaderboard } from "@shared/schema";
 import session from "express-session";
+import connectPg from "connect-pg-simple";
 import createMemoryStore from "memorystore";
+import { db } from "./db";
+import { eq, and, desc, asc, or } from "drizzle-orm";
+import { pool } from "./db";
 
 const MemoryStore = createMemoryStore(session);
+const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
   // User operations
@@ -41,71 +46,57 @@ export interface IStorage {
   updateLeaderboard(userId: number, data: Partial<InsertLeaderboard>): Promise<Leaderboard>;
 
   // Session store
-  sessionStore: session.SessionStore;
+  sessionStore: any;
 }
 
-export class MemStorage implements IStorage {
-  private usersStore: Map<number, User>;
-  private gamesStore: Map<number, Game>;
-  private tournamentsStore: Map<number, Tournament>;
-  private tournamentParticipantsStore: Map<number, TournamentParticipant>;
-  private matchesStore: Map<number, Match>;
-  private leaderboardStore: Map<number, Leaderboard>;
-  
-  sessionStore: session.SessionStore;
-  private nextId: { [key: string]: number } = {};
+export class DatabaseStorage implements IStorage {
+  sessionStore: any;
 
   constructor() {
-    this.usersStore = new Map();
-    this.gamesStore = new Map();
-    this.tournamentsStore = new Map();
-    this.tournamentParticipantsStore = new Map();
-    this.matchesStore = new Map();
-    this.leaderboardStore = new Map();
-    
-    this.nextId = {
-      users: 1,
-      games: 1,
-      tournaments: 1,
-      tournamentParticipants: 1,
-      matches: 1,
-      leaderboard: 1
-    };
-    
-    this.sessionStore = new MemoryStore({
-      checkPeriod: 86400000, // prune expired entries every 24h
+    this.sessionStore = new PostgresSessionStore({
+      pool,
+      createTableIfMissing: true,
     });
     
-    // Initialize with some sample games
-    this.initializeGames();
-    this.initializeTournaments();
+    // Initialize with sample data only if tables are empty
+    this.initializeData();
   }
   
-  private initializeGames() {
+  private async initializeData() {
+    try {
+      // Check if games table is empty
+      const existingGames = await db.select().from(games);
+      
+      if (existingGames.length === 0) {
+        await this.initializeGames();
+        await this.initializeTournaments();
+      }
+    } catch (error) {
+      console.error("Error initializing data:", error);
+    }
+  }
+  
+  private async initializeGames() {
     const sampleGames = [
       {
-        id: this.getNextId('games'),
         name: "Valorant",
         image: "https://images.unsplash.com/photo-1579139273771-e3a458d80f56",
         activePlayers: 12854,
         tournamentCount: 24
       },
       {
-        id: this.getNextId('games'),
         name: "CS:GO",
         image: "https://images.unsplash.com/photo-1542751371-adc38448a05e",
         activePlayers: 18352,
         tournamentCount: 32
       },
       {
-        id: this.getNextId('games'),
         name: "Fortnite",
         image: "https://images.unsplash.com/photo-1583833008338-31a470dd984d",
         activePlayers: 15987,
         tournamentCount: 18
       },
       {
-        id: this.getNextId('games'),
         name: "League of Legends",
         image: "https://images.unsplash.com/photo-1619962305107-96a06628c7e1",
         activePlayers: 22634,
@@ -113,19 +104,19 @@ export class MemStorage implements IStorage {
       }
     ];
     
-    sampleGames.forEach(game => {
-      this.gamesStore.set(game.id, game);
-    });
+    for (const game of sampleGames) {
+      await db.insert(games).values(game);
+    }
   }
   
-  private initializeTournaments() {
+  private async initializeTournaments() {
     const now = new Date();
+    const allGames = await db.select().from(games);
     
-    const tournaments = [
+    const tournamentData = [
       {
-        id: this.getNextId('tournaments'),
         name: "CS:GO Champions League",
-        gameId: 2, // CS:GO
+        gameId: allGames.find(g => g.name === "CS:GO")?.id || 1,
         image: "https://images.unsplash.com/photo-1542751371-adc38448a05e",
         description: "The premier CS:GO tournament for elite teams.",
         prizePool: 25000,
@@ -135,9 +126,8 @@ export class MemStorage implements IStorage {
         status: "upcoming"
       },
       {
-        id: this.getNextId('tournaments'),
         name: "Valorant Uprising",
-        gameId: 1, // Valorant
+        gameId: allGames.find(g => g.name === "Valorant")?.id || 2,
         image: "https://images.unsplash.com/photo-1579139273771-e3a458d80f56",
         description: "Battle against the best Valorant teams for glory.",
         prizePool: 15000,
@@ -147,9 +137,8 @@ export class MemStorage implements IStorage {
         status: "upcoming"
       },
       {
-        id: this.getNextId('tournaments'),
         name: "Fortnite Masters",
-        gameId: 3, // Fortnite
+        gameId: allGames.find(g => g.name === "Fortnite")?.id || 3,
         image: "https://images.unsplash.com/photo-1614680376573-df3480f0c6ff",
         description: "The ultimate battle royale competition.",
         prizePool: 10000,
@@ -160,209 +149,287 @@ export class MemStorage implements IStorage {
       }
     ];
     
-    tournaments.forEach(tournament => {
-      this.tournamentsStore.set(tournament.id, tournament);
-    });
-  }
-
-  private getNextId(entity: string): number {
-    const id = this.nextId[entity]++;
-    return id;
+    for (const tournament of tournamentData) {
+      await db.insert(tournaments).values(tournament);
+    }
   }
 
   // User operations
   async getUser(id: number): Promise<User | undefined> {
-    return this.usersStore.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.usersStore.values()).find(
-      (user) => user.username.toLowerCase() === username.toLowerCase()
-    );
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.username, username));
+    return user;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.usersStore.values()).find(
-      (user) => user.email.toLowerCase() === email.toLowerCase()
-    );
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email));
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.getNextId('users');
-    const now = new Date();
-    const user: User = { ...insertUser, id, createdAt: now };
-    this.usersStore.set(id, user);
+    const [user] = await db
+      .insert(users)
+      .values(insertUser)
+      .returning();
     
-    // Also create a leaderboard entry for this user
-    const leaderboardEntry: Leaderboard = {
-      id: this.getNextId('leaderboard'),
-      userId: id,
+    // Create a leaderboard entry for the new user
+    await db.insert(leaderboard).values({
+      userId: user.id,
       points: 0,
       wins: 0,
       losses: 0,
-      rank: this.leaderboardStore.size + 1
-    };
-    this.leaderboardStore.set(leaderboardEntry.id, leaderboardEntry);
+      rank: 0, // Will be updated later
+    });
+    
+    // Update all ranks in the leaderboard
+    await this.recalculateLeaderboardRanks();
     
     return user;
   }
 
   async updateUser(id: number, userData: Partial<InsertUser>): Promise<User> {
-    const user = await this.getUser(id);
-    if (!user) {
+    const [updatedUser] = await db
+      .update(users)
+      .set(userData)
+      .where(eq(users.id, id))
+      .returning();
+    
+    if (!updatedUser) {
       throw new Error(`User with id ${id} not found`);
     }
     
-    const updatedUser = { ...user, ...userData };
-    this.usersStore.set(id, updatedUser);
     return updatedUser;
   }
 
   // Game operations
   async getGames(): Promise<Game[]> {
-    return Array.from(this.gamesStore.values());
+    return db.select().from(games);
   }
 
   async getGame(id: number): Promise<Game | undefined> {
-    return this.gamesStore.get(id);
+    const [game] = await db
+      .select()
+      .from(games)
+      .where(eq(games.id, id));
+    return game;
   }
 
   async createGame(game: InsertGame): Promise<Game> {
-    const id = this.getNextId('games');
-    const newGame: Game = { ...game, id };
-    this.gamesStore.set(id, newGame);
+    const [newGame] = await db
+      .insert(games)
+      .values(game)
+      .returning();
     return newGame;
   }
 
   // Tournament operations
   async getTournaments(): Promise<Tournament[]> {
-    return Array.from(this.tournamentsStore.values());
+    return db.select().from(tournaments);
   }
 
   async getTournament(id: number): Promise<Tournament | undefined> {
-    return this.tournamentsStore.get(id);
+    const [tournament] = await db
+      .select()
+      .from(tournaments)
+      .where(eq(tournaments.id, id));
+    return tournament;
   }
 
   async getTournamentsByGame(gameId: number): Promise<Tournament[]> {
-    return Array.from(this.tournamentsStore.values()).filter(
-      tournament => tournament.gameId === gameId
-    );
+    return db
+      .select()
+      .from(tournaments)
+      .where(eq(tournaments.gameId, gameId));
   }
 
   async createTournament(tournament: InsertTournament): Promise<Tournament> {
-    const id = this.getNextId('tournaments');
-    const newTournament: Tournament = { ...tournament, id };
-    this.tournamentsStore.set(id, newTournament);
+    const [newTournament] = await db
+      .insert(tournaments)
+      .values(tournament)
+      .returning();
     return newTournament;
   }
 
   // Tournament participant operations
   async registerForTournament(data: InsertTournamentParticipant): Promise<TournamentParticipant> {
-    const id = this.getNextId('tournamentParticipants');
-    const now = new Date();
-    const participant: TournamentParticipant = { ...data, id, registeredAt: now };
-    this.tournamentParticipantsStore.set(id, participant);
+    const [participant] = await db
+      .insert(tournamentParticipants)
+      .values(data)
+      .returning();
     return participant;
   }
 
   async getParticipantsForTournament(tournamentId: number): Promise<TournamentParticipant[]> {
-    return Array.from(this.tournamentParticipantsStore.values()).filter(
-      participant => participant.tournamentId === tournamentId
-    );
+    return db
+      .select()
+      .from(tournamentParticipants)
+      .where(eq(tournamentParticipants.tournamentId, tournamentId));
   }
 
   async isUserRegisteredForTournament(userId: number, tournamentId: number): Promise<boolean> {
-    return Array.from(this.tournamentParticipantsStore.values()).some(
-      participant => participant.userId === userId && participant.tournamentId === tournamentId
-    );
+    const [participant] = await db
+      .select()
+      .from(tournamentParticipants)
+      .where(and(
+        eq(tournamentParticipants.userId, userId),
+        eq(tournamentParticipants.tournamentId, tournamentId)
+      ));
+    return !!participant;
   }
 
   // Match operations
   async getMatches(): Promise<Match[]> {
-    return Array.from(this.matchesStore.values());
+    return db.select().from(matches);
   }
 
   async getMatchesForTournament(tournamentId: number): Promise<Match[]> {
-    return Array.from(this.matchesStore.values()).filter(
-      match => match.tournamentId === tournamentId
-    );
+    return db
+      .select()
+      .from(matches)
+      .where(eq(matches.tournamentId, tournamentId));
   }
 
   async getMatchesForUser(userId: number): Promise<Match[]> {
-    return Array.from(this.matchesStore.values()).filter(
-      match => match.player1Id === userId || match.player2Id === userId
-    );
+    return db
+      .select()
+      .from(matches)
+      .where(
+        or(
+          eq(matches.player1Id, userId),
+          eq(matches.player2Id, userId)
+        )
+      );
   }
 
   async createMatch(match: InsertMatch): Promise<Match> {
-    const id = this.getNextId('matches');
-    const newMatch: Match = { ...match, id };
-    this.matchesStore.set(id, newMatch);
+    const [newMatch] = await db
+      .insert(matches)
+      .values(match)
+      .returning();
     return newMatch;
   }
 
   async updateMatchResult(matchId: number, winnerId: number, score: string): Promise<Match> {
-    const match = this.matchesStore.get(matchId);
+    const [match] = await db
+      .update(matches)
+      .set({ winnerId, score })
+      .where(eq(matches.id, matchId))
+      .returning();
+    
     if (!match) {
       throw new Error(`Match with id ${matchId} not found`);
     }
     
-    const updatedMatch = { ...match, winnerId, score };
-    this.matchesStore.set(matchId, updatedMatch);
-    
-    // Update leaderboard
-    const winner = await this.getUserLeaderboard(winnerId);
-    const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id;
-    const loser = await this.getUserLeaderboard(loserId);
+    // Update leaderboard for winner
+    const [winner] = await db
+      .select()
+      .from(leaderboard)
+      .where(eq(leaderboard.userId, winnerId));
     
     if (winner) {
-      await this.updateLeaderboard(winnerId, {
-        points: winner.points + 100,
-        wins: winner.wins + 1
-      });
+      const newPoints = (winner.points || 0) + 100;
+      const newWins = (winner.wins || 0) + 1;
+      
+      await db
+        .update(leaderboard)
+        .set({
+          points: newPoints,
+          wins: newWins
+        })
+        .where(eq(leaderboard.userId, winnerId));
     }
+    
+    // Update leaderboard for loser
+    const loserId = match.player1Id === winnerId ? match.player2Id : match.player1Id;
+    const [loser] = await db
+      .select()
+      .from(leaderboard)
+      .where(eq(leaderboard.userId, loserId));
     
     if (loser) {
-      await this.updateLeaderboard(loserId, {
-        losses: loser.losses + 1
-      });
+      const newLosses = (loser.losses || 0) + 1;
+      
+      await db
+        .update(leaderboard)
+        .set({ losses: newLosses })
+        .where(eq(leaderboard.userId, loserId));
     }
     
-    return updatedMatch;
+    // Recalculate ranks
+    await this.recalculateLeaderboardRanks();
+    
+    return match;
   }
 
   // Leaderboard operations
   async getLeaderboard(): Promise<Leaderboard[]> {
-    return Array.from(this.leaderboardStore.values())
-      .sort((a, b) => b.points - a.points);
+    const entries = await db.select().from(leaderboard);
+    
+    // Sort entries by points (handle null values)
+    return entries.sort((a, b) => {
+      const pointsA = a.points || 0;
+      const pointsB = b.points || 0;
+      return pointsB - pointsA;
+    });
   }
 
   async getUserLeaderboard(userId: number): Promise<Leaderboard | undefined> {
-    return Array.from(this.leaderboardStore.values()).find(
-      entry => entry.userId === userId
-    );
+    const [entry] = await db
+      .select()
+      .from(leaderboard)
+      .where(eq(leaderboard.userId, userId));
+    return entry;
   }
 
   async updateLeaderboard(userId: number, data: Partial<InsertLeaderboard>): Promise<Leaderboard> {
-    const entry = await this.getUserLeaderboard(userId);
-    if (!entry) {
+    const [updatedEntry] = await db
+      .update(leaderboard)
+      .set(data)
+      .where(eq(leaderboard.userId, userId))
+      .returning();
+    
+    if (!updatedEntry) {
       throw new Error(`Leaderboard entry for user ${userId} not found`);
     }
     
-    const updatedEntry = { ...entry, ...data };
-    this.leaderboardStore.set(entry.id, updatedEntry);
-    
-    // Re-calculate ranks
-    const sortedEntries = Array.from(this.leaderboardStore.values())
-      .sort((a, b) => b.points - a.points);
-    
-    sortedEntries.forEach((entry, index) => {
-      entry.rank = index + 1;
-      this.leaderboardStore.set(entry.id, entry);
-    });
+    // Recalculate ranks
+    await this.recalculateLeaderboardRanks();
     
     return updatedEntry;
   }
+  
+  private async recalculateLeaderboardRanks(): Promise<void> {
+    // Get all leaderboard entries sorted by points
+    const entries = await db
+      .select()
+      .from(leaderboard);
+    
+    // Sort entries by points (handle null values)
+    const sortedEntries = entries.sort((a, b) => {
+      const pointsA = a.points || 0;
+      const pointsB = b.points || 0;
+      return pointsB - pointsA;
+    });
+    
+    // Update ranks for each entry
+    for (let i = 0; i < sortedEntries.length; i++) {
+      await db
+        .update(leaderboard)
+        .set({ rank: i + 1 })
+        .where(eq(leaderboard.id, sortedEntries[i].id));
+    }
+  }
 }
 
-export const storage = new MemStorage();
+// Initialize the correct storage implementation
+export const storage = new DatabaseStorage();
