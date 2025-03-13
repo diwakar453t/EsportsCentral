@@ -30,6 +30,7 @@ export const tournaments = pgTable("tournaments", {
   image: text("image").notNull(),
   description: text("description"),
   prizePool: integer("prize_pool").default(0),
+  entryFee: integer("entry_fee").default(1000), // Default $10.00 (in cents)
   teamSize: integer("team_size").default(1),
   playerLimit: integer("player_limit"),
   startDate: timestamp("start_date").notNull(),
@@ -90,6 +91,7 @@ export const insertTournamentSchema = createInsertSchema(tournaments).pick({
   image: true,
   description: true,
   prizePool: true,
+  entryFee: true,
   teamSize: true,
   playerLimit: true,
   startDate: true,

@@ -1,8 +1,13 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
-import { Calendar, Users, Trophy } from "lucide-react";
+import { Calendar, Users, Trophy, Ticket } from "lucide-react";
 import { Tournament } from "@shared/schema";
+import { useState } from "react";
+import { TournamentPaymentDialog } from "@/components/tournament-payment-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { useLocation } from "wouter";
 
 interface TournamentCardProps {
   tournament: Tournament;
@@ -10,6 +15,12 @@ interface TournamentCardProps {
 }
 
 const TournamentCard = ({ tournament, onRegister }: TournamentCardProps) => {
+  const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const [_, setLocation] = useLocation();
+
   const formatDate = (date: Date) => {
     return new Date(date).toLocaleDateString('en-US', {
       year: 'numeric',
@@ -31,10 +42,50 @@ const TournamentCard = ({ tournament, onRegister }: TournamentCardProps) => {
     return `Starts on ${formatDate(startDate)}`;
   };
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
+    if (!user) {
+      setLocation("/auth");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/create-payment-intent", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: tournament.entryFee,
+          tournamentId: tournament.id,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to create payment intent");
+      }
+
+      const data = await response.json();
+      setClientSecret(data.clientSecret);
+      setIsPaymentDialogOpen(true);
+    } catch (error) {
+      console.error("Payment error:", error);
+      toast({
+        title: "Error",
+        description: "Failed to start registration process. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handlePaymentSuccess = () => {
     if (onRegister) {
       onRegister(tournament.id);
     }
+    toast({
+      title: "Success",
+      description: "Successfully registered for the tournament!",
+    });
+    setIsPaymentDialogOpen(false);
   };
 
   return (
@@ -65,7 +116,8 @@ const TournamentCard = ({ tournament, onRegister }: TournamentCardProps) => {
         <h3 className="font-bold text-xl font-rajdhani text-white mb-2">{tournament.name}</h3>
         <div className="flex items-center text-sm text-gray-400 mb-4">
           <Users className="h-4 w-4 mr-2" /> {tournament.playerLimit} Teams
-          <Trophy className="h-4 w-4 ml-4 mr-2 text-yellow-400" /> ${tournament.prizePool.toLocaleString()} Prize Pool
+          <Trophy className="h-4 w-4 ml-4 mr-2 text-yellow-400" /> ${tournament.prizePool?.toLocaleString() ?? 0} Prize Pool
+          <Ticket className="h-4 w-4 ml-4 mr-2" /> ${(tournament.entryFee / 100).toFixed(2)} Entry
         </div>
         <div className="flex justify-between items-center mt-4">
           <div>
